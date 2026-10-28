@@ -216,6 +216,8 @@ def reduce_embeddings(
     if method == "pca":
         reducer = PCA(n_components=2, random_state=random_state)
     elif method == "umap":
+        if embeddings.shape[0] < 4:
+            raise ValueError("UMAP requires at least four files")
         from umap import UMAP
 
         reducer = UMAP(
@@ -227,7 +229,7 @@ def reduce_embeddings(
     elif method == "tsne":
         from sklearn.manifold import TSNE
 
-        perplexity = min(30, max(2, (embeddings.shape[0] - 1) // 3))
+        perplexity = min(30, max(1, (embeddings.shape[0] - 1) // 3))
         reducer = TSNE(
             n_components=2,
             perplexity=perplexity,

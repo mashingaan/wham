@@ -78,3 +78,10 @@ def test_artifact_rejects_mismatched_path_count(tmp_path: Path):
 def test_cluster_reports_undefined_silhouette_for_identical_vectors():
     result = cluster_embeddings(np.zeros((4, 3)), n_clusters=2)
     assert result["silhouette"] is None
+
+
+def test_small_sample_projection_methods():
+    embeddings = np.random.default_rng(9).normal(size=(2, 8))
+    assert reduce_embeddings(embeddings, method="tsne").shape == (2, 2)
+    with pytest.raises(ValueError, match="at least four files"):
+        reduce_embeddings(embeddings, method="umap")

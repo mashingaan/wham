@@ -1,0 +1,47 @@
+name: Fork validation of tutorial commit
+
+on:
+  push:
+    branches:
+      - codex/wham-hosted-validation
+
+permissions:
+  contents: read
+
+jobs:
+  clean-install-and-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GIT_LFS_SKIP_SMUDGE: '1'
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: mashingaan/wham
+          ref: 4a0250652f8a9c72ad4eb88f0858bb0f9a71e552
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Install WhAM
+        run: python -m pip install -e .
+      - name: Install VampNet
+        run: python -m pip install -e ./vampnet
+      - name: Install madmom
+        run: python -m pip install --no-build-isolation madmom
+      - name: Install tutorial and test dependencies
+        run: python -m pip install -r tutorial/requirements.txt pytest nbconvert ipykernel
+      - name: Check dependency consistency
+        run: python -m pip check
+      - name: Run tutorial tests
+        run: python -m pytest tests/test_wham_dswp.py -q
+      - name: Download and verify official weights
+        run: |
+          mkdir -p vampnet/models
+          curl --fail --location --retry 3 -o vampnet/models/coarse.pth https://zenodo.org/records/17633708/files/coarse.pth
+          curl --fail --location --retry 3 -o vampnet/models/codec.pth https://zenodo.org/records/17633708/files/codec.pth
+          echo '0c1194ac517cd969aee295a362f60761  vampnet/models/coarse.pth' | md5sum -c
+          echo '478875644e1591ea771903c18e8b71c7  vampnet/models/codec.pth' | md5sum -c
+      - name: Execute notebook with real weights
+        run: python -m jupyter nbconvert --to notebook --execute tutorial/wham_dswp_embeddings.ipynb --output /tmp/wham-executed.ipynb --ExecutePreprocessor.timeout=1200

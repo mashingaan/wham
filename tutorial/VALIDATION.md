@@ -29,6 +29,12 @@ The downloaded files were checked against the Zenodo record:
 - Full notebook execution with three public DSWP files: passed
 - Public-label social-unit and coda classification: intentionally skipped because the DSWP release has no matching annotation table
 
+## Follow-up changes
+
+The tutorial now pins the DSWP dataset revision, rejects duplicate annotation filenames and separates source recording groups in the optional classifier. Synthetic tests check the group split and artifact integrity. Verified recording groups and labels were not available, so neither supervised task was evaluated on real annotations. Dependencies are not locked and the root installation procedure has not been tested in a clean environment.
+
+On 2026-10-28, the updated notebook was executed with the same local Python 3.12 environment and CPU checkpoints. It produced three layer-10 vectors with shape `(3, 1280)` and ran PCA and KMeans. Eight tutorial tests passed. This is a smoke test, not an evaluation of cluster quality or a clean-install test.
+
 The artifact and downloaded weights stay outside the commit. The notebook downloads or reuses them locally and keeps the supervised claims gated on explicit annotations.
 
 Sources: [WhAM](https://github.com/Project-CETI/wham), [paper](https://arxiv.org/abs/2512.02206), [DSWP](https://huggingface.co/datasets/orrp/DSWP), [weights](https://doi.org/10.5281/zenodo.17633708).

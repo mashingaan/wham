@@ -15,6 +15,7 @@ import numpy as np
 
 
 DSWP_REPO_ID = "orrp/DSWP"
+DSWP_REVISION = "a2e5d6dd02fc60343e1288c33314e14e8b7aa5be"
 WHAM_SAMPLE_RATE = 16_000
 WHAM_EMBEDDING_DIM = 1_280
 
@@ -41,6 +42,7 @@ def download_dswp_audio(
             repo_id=repo_id,
             filename=Path(file_name).name,
             repo_type="dataset",
+            revision=DSWP_REVISION,
             local_dir=str(cache_dir),
         )
         paths.append(Path(path))
@@ -167,6 +169,9 @@ def save_embedding_artifact(
     """Save paths and vectors in a portable compressed NumPy artifact."""
 
     validate_embeddings(embeddings)
+    audio_paths = list(audio_paths)
+    if len(audio_paths) != embeddings.shape[0]:
+        raise ValueError("Audio path and embedding counts differ")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -185,6 +190,8 @@ def load_embedding_artifact(path: Path) -> dict[str, object]:
         audio_paths = [Path(item) for item in data["audio_paths"].tolist()]
         layer = int(np.asarray(data["layer"]).item())
     validate_embeddings(embeddings)
+    if len(audio_paths) != embeddings.shape[0]:
+        raise ValueError("Audio path and embedding counts differ")
     return {
         "audio_paths": audio_paths,
         "embeddings": embeddings,
@@ -252,10 +259,14 @@ def cluster_embeddings(
     scaled = StandardScaler().fit_transform(embeddings)
     model = KMeans(n_clusters=n_clusters, n_init=10, random_state=random_state)
     labels = model.fit_predict(scaled)
+    unique_labels = np.unique(labels)
+    silhouette = None
+    if 1 < len(unique_labels) < len(labels):
+        silhouette = float(silhouette_score(scaled, labels))
     return {
         "labels": labels,
         "model": model,
-        "silhouette": float(silhouette_score(scaled, labels)),
+        "silhouette": silhouette,
     }
 
 
@@ -273,6 +284,9 @@ def load_annotation_labels(
     missing = {file_column, label_column} - set(table.columns)
     if missing:
         raise ValueError(f"Annotation CSV is missing columns: {sorted(missing)}")
+    names = table[file_column].dropna().map(lambda value: Path(str(value)).name)
+    if names.duplicated().any():
+        raise ValueError("Annotation filenames must be unique")
     by_name = {
         Path(str(row[file_column])).name: str(row[label_column])
         for _, row in table.iterrows()
@@ -290,28 +304,32 @@ def load_annotation_labels(
     return matched_paths, np.asarray(labels)
 
 
-def fit_label_baseline(embeddings: np.ndarray, labels: np.ndarray) -> dict[str, object]:
-    """Fit an optional logistic baseline when verified labels exist."""
+def fit_label_baseline(embeddings: np.ndarray, labels: np.ndarray, groups: np.ndarray) -> dict[str, object]:
+    """Evaluate a baseline with recording groups held apart across the split."""
 
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import classification_report
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import GroupShuffleSplit
     from sklearn.preprocessing import LabelEncoder, StandardScaler
     from sklearn.pipeline import make_pipeline
 
     if embeddings.shape[0] != len(labels):
         raise ValueError("Embedding and label counts differ")
+    if len(groups) != len(labels) or any(not str(group).strip() for group in groups):
+        raise ValueError("A nonempty recording group is required for each label")
     encoder = LabelEncoder()
     encoded = encoder.fit_transform(labels)
     if len(encoder.classes_) < 2:
         raise ValueError("At least two social-unit classes are required")
-    train_x, test_x, train_y, test_y = train_test_split(
-        embeddings,
-        encoded,
-        test_size=0.2,
-        random_state=42,
-        stratify=encoded,
+    train_indices, test_indices = next(
+        GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(
+            embeddings, encoded, groups
+        )
     )
+    train_x, test_x = embeddings[train_indices], embeddings[test_indices]
+    train_y, test_y = encoded[train_indices], encoded[test_indices]
+    if len(np.unique(train_y)) < 2:
+        raise ValueError("Training groups must contain at least two classes")
     model = make_pipeline(
         StandardScaler(),
         LogisticRegression(max_iter=2_000, random_state=42),
@@ -330,13 +348,16 @@ def fit_label_baseline(embeddings: np.ndarray, labels: np.ndarray) -> dict[str, 
         "model": model,
         "classes": encoder.classes_,
         "report": report,
+        "train_indices": train_indices,
+        "test_indices": test_indices,
     }
 
 
 def fit_social_unit_baseline(
     embeddings: np.ndarray,
     labels: np.ndarray,
+    groups: np.ndarray,
 ) -> dict[str, object]:
     """Fit the optional social-unit baseline when verified Unit labels exist."""
 
-    return fit_label_baseline(embeddings, labels)
+    return fit_label_baseline(embeddings, labels, groups)

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: mashingaan/wham
-          ref: 4a0250652f8a9c72ad4eb88f0858bb0f9a71e552
+          ref: 30cb7ae8c6d9beaa79bcd84a7a34e14f7533b4dd
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
